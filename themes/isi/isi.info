@@ -1,0 +1,36 @@
+name = isi
+description = isi theme for my site
+core = 7.x
+engine = phptemplate
+
+regions[header] = Header
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;HOMEPAGE REGIONS
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+regions[home_featured] = Homepage Featured Destinations
+regions[content] = Content
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;INNER PAGE REGIONS
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+regions[page_header] = Page Header
+regions[content] = Content
+
+
+regions[footer_links] = Footer Links Section
+regions[footer_copyright] = Footer Copyright Section
+
+
+stylesheets[all][] = css/bootstrap.css
+stylesheets[all][] = css/animate.css
+stylesheets[all][] = css/slick.css
+stylesheets[all][] = css/aranax.css
+
+
+scripts[] = js/bootstrap.min.js
+scripts[] = js/wow.min.js
+scripts[] = js/aranax.js
+
+
+;features[] = name
+;features[] = main_menu

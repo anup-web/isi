@@ -1,0 +1,197 @@
+<?php
+
+define('DS_FT_PLUS_PROPERTY', '#ds_ft_plus_field_template');
+
+/**
+ * Implements hook_cfrplugin_info()
+ *
+ * @return array
+ */
+function ds_ft_plus_cfrplugin_info() {
+  return function_exists('cfrplugindiscovery') && module_exists('renderkit')
+    ? cfrplugindiscovery()->discoverByInterface(__DIR__ . '/src', 'Drupal\ds_ft_plus')
+    : array();
+}
+
+/**
+ * Implements hook_module_implements_alter().
+ *
+ * @param array $implementations
+ * @param string $hook
+ */
+function ds_ft_plus_module_implements_alter(array &$implementations, $hook) {
+
+  if ('theme_registry_alter' === $hook) {
+    // ds_ft_plus_*() should be called after ds_extras_().
+    if (array_key_exists('ds_ft_plus', $implementations)) {
+      $group = $implementations['ds_ft_plus'];
+      unset($implementations['ds_ft_plus']);
+      $implementations['ds_ft_plus'] = $group;
+    }
+  }
+
+  if ('field_attach_view_alter' === $hook) {
+    // Remove 'ds_ft_plus' in case field templates is not enabled.
+    if (!variable_get('ds_extras_field_template', FALSE)) {
+      unset($implementations['ds_ft_plus']);
+    }
+  }
+}
+
+/**
+ * Implements hook_theme_registry_alter().
+ *
+ * @param array $theme_registry
+ */
+function ds_ft_plus_theme_registry_alter(array &$theme_registry) {
+  foreach ($theme_registry['field']['preprocess functions'] as $i => &$function) {
+    /* @see ds_extras_preprocess_field() */
+    if ($function === 'ds_extras_preprocess_field') {
+      /* @see _ds_ft_plus_ds_extras_preprocess_field() */
+      $function = '_ds_ft_plus_ds_extras_preprocess_field';
+    }
+  }
+}
+
+/**
+ * Implements hook_field_attach_view_alter().
+ *
+ * @param array $output
+ * @param array $context
+ *
+ * @see ds_extras_preprocess_field()
+ */
+function ds_ft_plus_field_attach_view_alter(
+  array &$output,
+  /** @noinspection PhpUnusedParameterInspection */ array $context
+) {
+  static $ds_field_settings = array();
+
+  foreach (element_children($output) as $key) {
+    $element = $output[$key];
+    if (!isset(
+      $element['#field_name'],
+      $element['#view_mode'],
+      $element['#bundle'],
+      $element['#entity_type'])
+    ) {
+      continue;
+    }
+
+    $entity_type = $element['#entity_type'];
+    $bundle = $element['#bundle'];
+    $view_mode = $element['#view_mode'];
+
+    $dfs =& $ds_field_settings[$entity_type][$bundle][$view_mode];
+
+    if ($dfs === FALSE) {
+      continue;
+    }
+
+    if ($dfs === NULL) {
+      if (ds_get_layout($entity_type, $bundle, $view_mode)) {
+        $dfs = ds_get_field_settings($entity_type, $bundle, $view_mode) ?: array();
+      }
+      else {
+        $dfs = FALSE;
+        continue;
+      }
+    }
+
+    $field_name = $element['#field_name'];
+
+    $output[$key][DS_FT_PLUS_PROPERTY] = isset($dfs[$field_name]['formatter_settings']['ft'])
+      ? $dfs[$field_name]['formatter_settings']['ft']
+      : array();
+  }
+}
+
+/**
+ * Replacement for same implementation in ds_extras.
+ *
+ * @param array $variables
+ *
+ * @see ds_extras_preprocess_field()
+ */
+function _ds_ft_plus_ds_extras_preprocess_field(array &$variables) {
+
+  if (!isset($variables['element'][DS_FT_PLUS_PROPERTY])) {
+    return;
+  }
+
+  $element = $variables['element'];
+
+  $entity_type = $element['#entity_type'];
+  $bundle = $element['#bundle'];
+
+  // Get the field name and field instance info - if available.
+  $field_name = $element['#field_name'];
+  $field_instance_info = field_info_instance($entity_type, $field_name, $bundle);
+
+  // Check if this field has custom output settings.
+  $config = $element[DS_FT_PLUS_PROPERTY];
+
+  // CSS classes
+  if (isset($config['classes'])) {
+    $variables['classes_array'][] = $config['classes'];
+  }
+
+  // Alter the label if configured.
+  if (isset($config['lb']) && !$variables['label_hidden']) {
+    $variables['label'] = t(check_plain($config['lb']));
+  }
+
+  if (!empty($config['func'])) {
+    $field_theme_function = $config['func'];
+  }
+  elseif (!empty($field_instance_info['ds_extras_field_template'])) {
+    $field_theme_function = $field_instance_info['ds_extras_field_template'];
+  }
+  else {
+    $field_theme_function = variable_get('ft-default', 'theme_field');
+    if (empty($field_theme_function)) {
+      $field_theme_function = 'theme_field';
+    }
+  }
+
+  if ($field_theme_function !== 'theme_field') {
+    $variables['theme_hook_suggestions'] = array();
+    // Either it uses the function.
+    $variables['theme_hook_suggestions'][] = str_replace('theme_', '', $field_theme_function);
+    $variables['theme_hook_suggestions'][] = $field_theme_function;
+    // Or the template file(s).
+    $suggestion = 'field__' . str_replace('theme_ds_field_', '', $field_theme_function);
+    $variables['theme_hook_suggestions'][] = $suggestion;
+    $variables['theme_hook_suggestions'][] = $suggestion . '__' . $field_name;
+    $variables['theme_hook_suggestions'][] = $suggestion . '__' . $bundle;
+    $variables['theme_hook_suggestions'][] = $suggestion . '__' . $field_name . '__' . $bundle;
+  }
+
+  // Sanitize the output of field templates
+  foreach (array('prefix', 'suffix') as $key) {
+    if (isset($config[$key])) {
+      $config[$key] = filter_xss_admin($config[$key]);
+    }
+  }
+
+  // Make $config available to the theme function or template.
+  $variables['ds-config'] = $config;
+}
+
+/**
+ * @param array $element
+ * @param array $form_state
+ * @param array $form
+ *
+ * @return array
+ */
+function _ds_ft_plus_flat_tree_process(
+  array $element,
+  /** @noinspection PhpUnusedParameterInspection */ array $form_state,
+  /** @noinspection PhpUnusedParameterInspection */ array $form
+) {
+
+  array_pop($element['#parents']);
+
+  return $element;
+}
